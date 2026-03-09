@@ -1,7 +1,21 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Image optimization
+  images: {
+    formats: ['image/avif', 'image/webp'],
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'assets.beeziee.com',
+      },
+    ],
+  },
+  
+  // Experimental features
+  experimental: {
+    optimizePackageImports: ['lucide-react', 'antd', '@ant-design/icons'],
+  },
 };
 
 export default nextConfig;

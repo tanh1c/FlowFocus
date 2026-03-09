@@ -1,0 +1,253 @@
+@import "tailwindcss";
+@config "../../tailwind.config.ts";
+
+/* ========================================
+   CSS Variables & Theme Configuration
+   ======================================== */
+:root {
+  /* Colors */
+  --color-primary: #34d399;
+  --color-primary-hover: #4ADE80;
+  --color-primary-active: #059669;
+
+  /* Glass effect */
+  --glass-bg: rgba(0, 0, 0, 0.94);
+  --glass-bg-transparent: rgba(255, 255, 255, 0.05);
+  --glass-border: rgba(255, 255, 255, 0.15);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+
+  /* Spacing */
+  --sidebar-width: 5%;
+
+  /* Font */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: 'Orbitron', monospace;
+  --font-dancing: 'Dancing Script', cursive;
+}
+
+/* ========================================
+   Base Styles
+   ======================================== */
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #000;
+  color: #fff;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ========================================
+   Glass Card Component
+   ======================================== */
+.glass-card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  transition: background 0.3s ease, backdrop-filter 0.3s ease;
+}
+
+/* ========================================
+   Custom Scrollbar
+   ======================================== */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* ========================================
+   Animations
+   ======================================== */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.5s ease-out forwards;
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* ========================================
+   Utility Classes
+   ======================================== */
+.px-2 {
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
+
+.py-6 {
+  padding-top: 1.5rem;
+  padding-bottom: 1.5rem;
+}
+
+.text-shadow-sm {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.no-doc-scroll {
+  overflow: hidden;
+  touch-action: none;
+}
+
+/* Button base styles */
+.btn-icon {
+  @apply w-8 h-8 flex items-center justify-center rounded-full cursor-pointer transition-all duration-200;
+}
+
+.btn-icon:hover {
+  @apply bg-white/10 scale-110;
+}
+
+.btn-icon:active {
+  @apply scale-95;
+}
+
+/* ========================================
+   Ant Design Overrides (Dark Theme & Sound Mixer)
+   ======================================== */
+.ant-slider {
+  margin: 0;
+  padding: 8px 0;
+}
+
+.ant-slider:hover .ant-slider-rail {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+.ant-slider .ant-slider-rail {
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 9999px;
+  height: 4px;
+  transition: background-color 0.3s;
+}
+
+.ant-slider .ant-slider-track {
+  background-color: var(--color-primary);
+  border-radius: 9999px;
+  height: 4px;
+  transition: background-color 0.3s;
+}
+
+.ant-slider .ant-slider-handle {
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  background-color: #fff;
+  border: none;
+  border-radius: 50%;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+  transition: transform 0.2s, box-shadow 0.2s;
+  opacity: 0;
+}
+
+.ant-slider:hover .ant-slider-handle,
+.ant-slider-handle:active,
+.ant-slider-handle:focus,
+.ant-slider-handle-dragging {
+  opacity: 1;
+  transform: scale(1.2);
+  box-shadow: 0 0 15px rgba(255, 255, 255, 0.8), 0 0 0 2px rgba(52, 211, 153, 0.3);
+}
+
+.ant-slider .ant-slider-handle::after {
+  display: none;
+}
+
+.ant-slider:hover .ant-slider-track {
+  background-color: var(--color-primary-hover);
+  box-shadow: 0 0 10px rgba(52, 211, 153, 0.3);
+}
+
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 4s linear infinite;
+}
+
+/* ========================================
+   Mobile Landscape Warning
+   ======================================== */
+@media (max-width: 1023px) and (orientation: portrait) {
+  .landscape-warning {
+    display: flex;
+  }
+}
+
+@media (min-width: 1024px),
+(orientation: landscape) {
+  .landscape-warning {
+    display: none;
+  }
+}
