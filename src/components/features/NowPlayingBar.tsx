@@ -17,7 +17,7 @@ export function NowPlayingBar() {
           style={isPlaying ? { animation: 'spin-slow 4s linear infinite' } : undefined}
         >
           <img
-            src={currentTrack.image}
+            src={currentTrack.image?.startsWith('http') ? `/_next/image?url=${encodeURIComponent(currentTrack.image)}&w=256&q=75` : currentTrack.image}
             alt={currentTrack.name}
             className="w-full h-full object-cover"
             referrerPolicy="no-referrer"

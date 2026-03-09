@@ -306,7 +306,7 @@ export function SoundMixer({ isOpen, onClose }: SoundMixerProps) {
       <div className="absolute inset-0 overflow-hidden rounded-3xl pointer-events-none">
         {currentTrack?.image && (
           <img
-            src={currentTrack.image}
+            src={currentTrack.image?.startsWith('http') ? `/_next/image?url=${encodeURIComponent(currentTrack.image)}&w=256&q=75` : currentTrack.image}
             alt="Mixer Background"
             referrerPolicy="no-referrer"
             className="absolute inset-0 opacity-20 z-0 transition-opacity duration-1000 object-cover w-full h-full"
@@ -425,7 +425,7 @@ export function SoundMixer({ isOpen, onClose }: SoundMixerProps) {
                       isPlaying ? "shadow-primary/20" : "bg-white/5"
                     )}>
                       <img
-                        src={currentTrack.image}
+                        src={currentTrack.image?.startsWith('http') ? `/_next/image?url=${encodeURIComponent(currentTrack.image)}&w=256&q=75` : currentTrack.image}
                         alt={currentTrack.name}
                         className={cn("w-full h-full object-cover transition-transform duration-[20s]", isPlaying ? "scale-110" : "scale-100")}
                         referrerPolicy="no-referrer"
