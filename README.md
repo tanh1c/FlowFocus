@@ -1,7 +1,7 @@
 # 🌊 Focus Flow
 *Your Ultimate Digital Sanctuary for Productivity & Zen.*
 
-![Focus Flow Preview](https://github.com/tanh1c/FlowFocus/assets/demo.jpg)
+![Focus Flow Preview](./assets/demo.jpg)
 
 **Focus Flow** is a premium, immersive web application designed exclusively to enhance your deep work, study sessions, and relaxation. It seamlessly merges stunning visual environments (live 3D scenes & videos), ambient soundscapes, YouTube Music integration, and essential productivity tools into a single, cohesive, glassmorphism-inspired interface.
 
