@@ -69,8 +69,6 @@ export function MusicPlayer({ audioSrc, onPlayStateChange }: MusicPlayerProps) {
     setVolume(value);
   };
 
-  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
-
   return (
     <div className="w-full max-w-lg mb-0">
       <GlassCard rounded="full" className="px-6 py-2">

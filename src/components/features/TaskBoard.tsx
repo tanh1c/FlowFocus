@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import {
-    Plus, Trash2, Circle, GripVertical, Pencil, Check,
+    Plus, Trash2, Circle, GripVertical, Pencil,
     LayoutGrid, Calendar as CalendarIcon, ListTodo, BarChart3,
     Clock, Flag, X, Flame, Zap, Target,
     CheckCircle2, CircleDot, Timer
@@ -439,28 +439,35 @@ function DashboardView({ tasks }: { tasks: Task[] }) {
 // --- Main Component ---
 export function TaskBoard({ isOpen, onClose }: TaskBoardProps) {
     const { recordTaskCompletion } = useApp();
+    // Start empty for SSR, hydrate from localStorage on mount. Lazy
+    // initializing from localStorage would cause a hydration mismatch
+    // because server has no localStorage.
     const [tasks, setTasks] = useState<Task[]>([]);
-    const [initialized, setInitialized] = useState(false);
+    const [hydrated, setHydrated] = useState(false);
 
-    // Load tasks on mount
     useEffect(() => {
         const saved = localStorage.getItem(TASKS_STORAGE_KEY);
         if (saved) {
             try {
+                // eslint-disable-next-line react-hooks/set-state-in-effect -- client-only hydration.
                 setTasks(JSON.parse(saved));
             } catch (e) {
                 console.error('Failed to parse tasks', e);
             }
         }
-        setInitialized(true);
+        setHydrated(true);
     }, []);
 
-    // Save tasks on change
+    // Debounce writes so rapid edits (drag, rename, add) coalesce into a
+    // single localStorage serialization. Skip until after hydration so we
+    // don't wipe out saved tasks with our empty default.
     useEffect(() => {
-        if (initialized) {
-            localStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(tasks));
-        }
-    }, [tasks, initialized]);
+        if (!hydrated) return;
+        const handle = setTimeout(() => {
+            try { localStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(tasks)); } catch { /* quota */ }
+        }, 300);
+        return () => clearTimeout(handle);
+    }, [tasks, hydrated]);
     const [activeTab, setActiveTab] = useState<TabType>('board');
     const [showAddModal, setShowAddModal] = useState(false);
     const [addToStatus, setAddToStatus] = useState<TaskStatus>('todo');

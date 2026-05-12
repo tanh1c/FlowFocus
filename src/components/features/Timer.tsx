@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Play,
   Pause,
@@ -21,6 +21,15 @@ interface TimerProps {
   onClose?: () => void;
 }
 
+// Static data - defined outside the component so it isn't re-allocated on every render.
+const FONT_OPTIONS = [
+  { name: 'Minimal', class: 'font-sans font-bold tracking-tighter', style: {} as React.CSSProperties },
+  { name: 'Minimal Light', class: 'font-sans font-light tracking-tight', style: {} as React.CSSProperties },
+  { name: 'Serif', class: 'font-serif font-bold tracking-tight', style: {} as React.CSSProperties },
+  { name: 'Serif Cond', class: 'font-serif font-black tracking-[-0.08em]', style: {} as React.CSSProperties },
+  { name: 'Handwritten', class: 'font-normal tracking-wide text-2xl', style: { fontFamily: 'var(--font-dancing)' } as React.CSSProperties },
+];
+
 export function Timer({ className, onClose }: TimerProps) {
   const { recordFocusSession, failFocusSession, state, updateSettings } = useApp();
   const [mode, setMode] = useState<TimerMode>('pomodoro');
@@ -34,13 +43,6 @@ export function Timer({ className, onClose }: TimerProps) {
   const [appearance, setAppearance] = useState({ color: '#ffffff', scale: 1, fontIndex: 0 });
   const [activeSettingsTab, setActiveSettingsTab] = useState<'general' | 'appearance'>('general');
 
-  const FONT_OPTIONS = [
-    { name: 'Minimal', class: 'font-sans font-bold tracking-tighter', style: {} },
-    { name: 'Minimal Light', class: 'font-sans font-light tracking-tight', style: {} },
-    { name: 'Serif', class: 'font-serif font-bold tracking-tight', style: {} },
-    { name: 'Serif Cond', class: 'font-serif font-black tracking-[-0.08em]', style: {} },
-    { name: 'Handwritten', class: 'font-normal tracking-wide text-2xl', style: { fontFamily: 'var(--font-dancing)' } },
-  ];
   const activeFont = FONT_OPTIONS[appearance.fontIndex] || FONT_OPTIONS[0];
 
   // Dragging State
@@ -50,23 +52,36 @@ export function Timer({ className, onClose }: TimerProps) {
   const timerRef = useRef<HTMLDivElement>(null);
 
   // Timer Logic
+  // Single effect that owns the interval and drives the clock.
+  // Handles both pomodoro (count down) and stopwatch (count up) modes,
+  // and only starts a session-complete flow once (guarded by a ref) to
+  // avoid cascading re-renders from setState-in-effect.
   const sessionRecorded = useRef(false);
   useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (isRunning && timeRemaining > 0) {
-      sessionRecorded.current = false;
-      interval = setInterval(() => {
-        setTimeRemaining((prev) => prev - 1);
-      }, 1000);
-    } else if (timeRemaining === 0 && !sessionRecorded.current) {
-      setIsRunning(false);
-      if (mode === 'pomodoro') {
-        recordFocusSession(pomodoroDuration);
-        sessionRecorded.current = true;
-      }
-    }
+    if (!isRunning) return;
+    sessionRecorded.current = false;
+
+    const interval = setInterval(() => {
+      setTimeRemaining((prev) => {
+        if (mode === 'stopwatch') return prev + 1;
+
+        // pomodoro: countdown
+        if (prev <= 1) {
+          if (!sessionRecorded.current) {
+            sessionRecorded.current = true;
+            recordFocusSession(pomodoroDuration);
+            // Stop the timer on the next tick - avoids setting state during
+            // another state update in the same React batch.
+            setIsRunning(false);
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
     return () => clearInterval(interval);
-  }, [isRunning, timeRemaining, mode, pomodoroDuration, recordFocusSession]);
+  }, [isRunning, mode, pomodoroDuration, recordFocusSession]);
 
   // Strict Mode Logic (Visibility Change)
   useEffect(() => {
@@ -113,15 +128,6 @@ export function Timer({ className, onClose }: TimerProps) {
     setTimeRemaining(newMode === 'pomodoro' ? pomodoroDuration * 60 : 0);
   };
 
-  const saveSettings = (newDuration: number) => {
-    setPomodoroDuration(newDuration);
-    if (mode === 'pomodoro') {
-      setIsRunning(false);
-      setTimeRemaining(newDuration * 60);
-    }
-    setShowSettings(false);
-  };
-
   // Drag Handlers
   useEffect(() => {
     if (!isDragging) return;
@@ -155,6 +161,21 @@ export function Timer({ className, onClose }: TimerProps) {
     });
     setIsDragging(true);
   };
+
+  // Pre-compute Pomodoro session dots for today - avoids recalculating
+  // and allocating new Date() on every render.
+  const sessionDots = useMemo(() => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const completedToday = state.focusSessions.filter(
+      (s) => s.completed && s.date === todayStr
+    ).length;
+    const currentCycleCount = completedToday % 4;
+    return [1, 2, 3, 4].map((i) => ({
+      i,
+      isCompleted:
+        i <= currentCycleCount || (completedToday > 0 && currentCycleCount === 0),
+    }));
+  }, [state.focusSessions]);
 
   if (isExpanded) {
     return (
@@ -573,25 +594,17 @@ export function Timer({ className, onClose }: TimerProps) {
 
       {/* Sessions Dots */}
       <div className="flex gap-1.5 px-2">
-        {[1, 2, 3, 4].map((i) => {
-          // Calculate completed sessions today for Pomodoro cycle (1 cycle = 4 sessions)
-          const todayStr = new Date().toISOString().split('T')[0];
-          const completedToday = state.focusSessions.filter(s => s.completed && s.date === todayStr).length;
-          const currentCycleCount = completedToday % 4;
-          const isCompleted = i <= currentCycleCount || (completedToday > 0 && currentCycleCount === 0);
-
-          return (
-            <div
-              key={i}
-              className={cn(
-                "w-1.5 h-1.5 rounded-full transition-all duration-500",
-                isCompleted
-                  ? "bg-primary shadow-[0_0_8px_rgba(52,211,153,0.8)] scale-110"
-                  : "bg-white/20"
-              )}
-            />
-          );
-        })}
+        {sessionDots.map(({ i, isCompleted }) => (
+          <div
+            key={i}
+            className={cn(
+              "w-1.5 h-1.5 rounded-full transition-all duration-500",
+              isCompleted
+                ? "bg-primary shadow-[0_0_8px_rgba(52,211,153,0.8)] scale-110"
+                : "bg-white/20"
+            )}
+          />
+        ))}
       </div>
 
       {/* Divider */}

@@ -2,8 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import Image from 'next/image';
-import { X, Sun, Heart } from 'lucide-react';
-import { Slider } from '@/components/ui/slider';
+import { Heart } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/contexts/AppContext';
 
@@ -23,6 +22,7 @@ interface SceneSelectorProps {
   isOpen: boolean;
   onClose: () => void;
   onSelectScene?: (scene: Scene) => void;
+  onPreloadScene?: (scene: Scene) => void;
   currentScene?: string;
   currentFilter: string;
   onSelectFilter: (filter: string) => void;
@@ -638,14 +638,14 @@ export function SceneSelector({
   isOpen,
   onClose,
   onSelectScene,
+  onPreloadScene,
   currentScene,
   currentFilter,
   onSelectFilter,
   pixelRendering = 'crisp-edges',
   onPixelRenderingChange,
 }: SceneSelectorProps) {
-  const { toggleFavoriteScene, isFavoriteScene, state: appState } = useApp();
-  const glassMode = appState.settings.glassMode;
+  const { toggleFavoriteScene, isFavoriteScene } = useApp();
   const [activeTab, setActiveTab] = useState<'static' | 'live' | 'pixel'>('static');
   /* Dragging Logic */
   const [isDragging, setIsDragging] = useState(false);
@@ -825,6 +825,8 @@ export function SceneSelector({
               <button
                 key={scene._id}
                 onClick={() => onSelectScene?.(scene)}
+                onMouseEnter={() => onPreloadScene?.(scene)}
+                onFocus={() => onPreloadScene?.(scene)}
                 className={cn(
                   'group relative w-full aspect-video rounded-xl overflow-hidden transition-all duration-300',
                   'border',

@@ -1,6 +1,5 @@
 'use client';
 
-import { Tooltip } from 'antd';
 import {
   SlidersVertical,
   ImageIcon,

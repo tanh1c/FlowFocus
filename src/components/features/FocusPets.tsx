@@ -1,12 +1,22 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Sparkles, Info, Settings2, RotateCcw, ChevronLeft, Globe, Shuffle, Coins, Heart, Utensils, Zap } from 'lucide-react';
+import { Info, Settings2, RotateCcw, ChevronLeft, Globe, Shuffle, Coins, Heart, Utensils } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import { cn } from '@/lib/utils';
 
 // ─── Pet Definitions ─────────────────────────────────────────────────────────
 // skins: all available skin names found in /public/pets/<type>/
+interface PetConfig {
+    skins: string[];
+    size: number;
+    speed: number;
+    actions: string[];
+    iconSize?: number;
+    bottomShift?: number;
+    skinScales?: Record<string, number>;
+}
+
 const PET_DEFS = {
     cat: { skins: ['cat'], size: 70, speed: 1.1, actions: ['idle', 'walk', 'run'], iconSize: 62, bottomShift: 0.26 },
     dog: { skins: ['akita', 'black', 'brown', 'red', 'white'], size: 44, speed: 0.8, actions: ['idle', 'walk', 'run', 'swipe', 'with_ball', 'lie'] },
@@ -30,6 +40,11 @@ const PET_DEFS = {
     turtle: { skins: ['green', 'orange'], size: 44, speed: 0.3, actions: ['idle', 'walk', 'run', 'swipe', 'with_ball', 'lie'] },
     zappy: { skins: ['yellow'], size: 40, speed: 1.4, actions: ['idle', 'walk', 'run', 'swipe', 'with_ball'] },
 };
+
+// Runtime lookup helper that returns the full PetConfig shape (with optional
+// fields) so TypeScript doesn't narrow them away after indexing.
+const getPetConfig = (type: string): PetConfig =>
+    (PET_DEFS as Record<string, PetConfig>)[type];
 
 type PetType = keyof typeof PET_DEFS | 'codachi';
 
@@ -77,15 +92,14 @@ function SinglePet({ pet, onRemove, scale, speed }: {
     scale: number,
     speed: number
 }) {
-    const xRef = useRef(pet.x);
     const wrapperRef = useRef<HTMLDivElement>(null);
     const [direction, setDirection] = useState(pet.direction);
     const [state, setState] = useState<string>('idle');
     const [saying, setSaying] = useState<string | null>(null);
     const isCodachi = pet.type === 'codachi';
-    const petConfig = isCodachi
+    const petConfig: PetConfig = isCodachi
         ? { size: 48, speed: 0.5, actions: ['idle', 'walk'], skins: [] }
-        : (PET_DEFS[pet.type as keyof typeof PET_DEFS] ?? { size: 44, speed: 1.0, actions: ['idle', 'walk'], skins: [] });
+        : (getPetConfig(pet.type) ?? { size: 44, speed: 1.0, actions: ['idle', 'walk'], skins: [] });
     const [codachiStage, setCodachiStage] = useState(0);
     const [effect, setEffect] = useState<string | null>(null);
 
@@ -107,7 +121,7 @@ function SinglePet({ pet, onRemove, scale, speed }: {
     const actualBaseSize = isCodachi ? (56 + codachiStage * 12) : petConfig.size;
     const actualSize = actualBaseSize * scale;
     const actualBaseSpeed = isCodachi ? (codachiStage === 0 ? 0 : 0.4 + codachiStage * 0.2) : petConfig.speed;
-    const groundAdjust = isCodachi ? 0 : (((petConfig as any).bottomShift || 0) * actualSize);
+    const groundAdjust = isCodachi ? 0 : ((petConfig.bottomShift || 0) * actualSize);
 
     let petUrl = '';
     if (isCodachi) {
@@ -122,38 +136,93 @@ function SinglePet({ pet, onRemove, scale, speed }: {
     const [isDragging, setIsDragging] = useState(false);
     const dragStartRel = useRef<{ x: number, y: number } | null>(null);
     const [yOffset, setYOffset] = useState(0);
+    // Keep `yOffset` readable from inside long-lived animation loops without
+    // making them re-initialize every frame that the value changes.
+    const yOffsetRef = useRef(0);
+    useEffect(() => { yOffsetRef.current = yOffset; }, [yOffset]);
 
+    // Refs for values used inside the long-lived animation loop. Using refs
+    // (instead of effect deps) means toggling scale/speed/actions in the
+    // settings panel won't tear down and rebuild the rAF loop each time.
+    const speedRef = useRef(speed);
+    const scaleRef = useRef(scale);
+    const actualBaseSpeedRef = useRef(actualBaseSpeed);
+    const actualSizeRef = useRef(actualSize);
+    const actionsRef = useRef(petConfig.actions);
+    const isCodachiRef = useRef(isCodachi);
+    const codachiStageRef = useRef(codachiStage);
+    useEffect(() => { speedRef.current = speed; }, [speed]);
+    useEffect(() => { scaleRef.current = scale; }, [scale]);
+    useEffect(() => { actualBaseSpeedRef.current = actualBaseSpeed; }, [actualBaseSpeed]);
+    useEffect(() => { actualSizeRef.current = actualSize; }, [actualSize]);
+    useEffect(() => { actionsRef.current = petConfig.actions; }, [petConfig.actions]);
+    useEffect(() => { isCodachiRef.current = isCodachi; }, [isCodachi]);
+    useEffect(() => { codachiStageRef.current = codachiStage; }, [codachiStage]);
+
+    // Fall animation - owns its own rAF loop, runs ONLY while yOffset > 0.
+    // Using rAF (not a 16ms setInterval) avoids stacking timers and keeps it
+    // in sync with the browser's paint cycle.
+    useEffect(() => {
+        if (isDragging || yOffset <= 0) return;
+        let rafId: number;
+        const step = () => {
+            setYOffset(prev => {
+                if (prev <= 0) return 0;
+                const next = prev - 4;
+                if (next > 0) rafId = requestAnimationFrame(step);
+                return Math.max(0, next);
+            });
+        };
+        rafId = requestAnimationFrame(step);
+        return () => cancelAnimationFrame(rafId);
+        // We only want to kick this off when transitioning from grounded -> falling;
+        // subsequent decrements are handled inside `step`.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isDragging, yOffset > 0]);
+
+    // Movement + AI loop. Runs while grounded and not dragging.
+    // Crucially: depends ONLY on (isDragging, codachiStage) so that
+    // normal motion isn't restarted every time yOffset or settings change.
     useEffect(() => {
         if (isDragging) return;
 
         let lastTime = performance.now();
-        let animFrame: number;
-        let currentDir = direction;
+        let animFrame = 0;
+        let currentDir: 1 | -1 = direction;
         let currentState = state;
-
-        // Fall from air
-        if (yOffset > 0) {
-            const fallInterval = setInterval(() => {
-                setYOffset(prev => {
-                    const np = prev - 4;
-                    if (np <= 0) { clearInterval(fallInterval); return 0; }
-                    return np;
-                });
-            }, 16);
-            return () => clearInterval(fallInterval);
-        }
+        // Track every timeout we schedule so they're all cancelled on unmount
+        // or when the effect re-runs. Previous version only cleared the first
+        // one, leaking the recursive `changeState` chain.
+        const timers = new Set<ReturnType<typeof setTimeout>>();
+        const safeSetTimeout = (fn: () => void, ms: number) => {
+            const id = setTimeout(() => {
+                timers.delete(id);
+                fn();
+            }, ms);
+            timers.add(id);
+            return id;
+        };
 
         // Movement loop
         const animate = (time: number) => {
             const dt = time - lastTime;
             lastTime = time;
-            if (currentState === 'walk' || currentState === 'run') {
+            // Skip movement while falling - fall effect owns yOffset.
+            if (yOffsetRef.current <= 0 && (currentState === 'walk' || currentState === 'run')) {
                 const speedMult = currentState === 'run' ? 1.5 : 1;
-                xRef.current += currentDir * (dt / 10) * (actualBaseSpeed * speed) * speedMult;
+                const nextX =
+                    (parseFloat(wrapperRef.current?.style.left || '0') || pet.x) +
+                    currentDir * (dt / 10) * (actualBaseSpeedRef.current * speedRef.current) * speedMult;
+
+                let newX = nextX;
                 let bounced = false;
-                if (xRef.current <= 0) { xRef.current = 0; currentDir = 1; bounced = true; }
-                else if (xRef.current >= window.innerWidth - actualSize) { xRef.current = window.innerWidth - actualSize; currentDir = -1; bounced = true; }
-                if (wrapperRef.current) wrapperRef.current.style.left = `${xRef.current}px`;
+                if (newX <= 0) { newX = 0; currentDir = 1; bounced = true; }
+                else if (newX >= window.innerWidth - actualSizeRef.current) {
+                    newX = window.innerWidth - actualSizeRef.current;
+                    currentDir = -1;
+                    bounced = true;
+                }
+                if (wrapperRef.current) wrapperRef.current.style.left = `${newX}px`;
                 if (bounced) setDirection(currentDir);
             }
             animFrame = requestAnimationFrame(animate);
@@ -162,51 +231,53 @@ function SinglePet({ pet, onRemove, scale, speed }: {
 
         // AI loop
         const changeState = () => {
+            const actions = actionsRef.current;
             const r = Math.random();
             let nextState = 'idle';
-            if (isCodachi && codachiStage === 0) {
+            if (isCodachiRef.current && codachiStageRef.current === 0) {
                 nextState = 'idle';
-            } else {
-                if (r > 0.8 && petConfig.actions.includes('run')) {
-                    nextState = 'run';
-                    currentDir = (currentState === 'walk' || currentState === 'run') && Math.random() > 0.2 ? currentDir : (Math.random() > 0.5 ? 1 : -1);
-                } else if (r > 0.5) {
-                    nextState = 'walk';
-                    currentDir = (currentState === 'walk' || currentState === 'run') && Math.random() > 0.2 ? currentDir : (Math.random() > 0.5 ? 1 : -1);
-                } else if (r > 0.35 && petConfig.actions.includes('swipe')) {
-                    nextState = 'swipe';
-                } else if (r > 0.25 && petConfig.actions.includes('lie')) {
-                    nextState = 'lie';
-                } else if (r > 0.15 && petConfig.actions.includes('stand')) {
-                    nextState = 'stand';
-                } else if (r > 0.05 && petConfig.actions.includes('with_ball')) {
-                    nextState = 'with_ball';
-                } else {
-                    nextState = 'idle';
-                }
+            } else if (r > 0.8 && actions.includes('run')) {
+                nextState = 'run';
+                currentDir = (currentState === 'walk' || currentState === 'run') && Math.random() > 0.2 ? currentDir : (Math.random() > 0.5 ? 1 : -1);
+            } else if (r > 0.5) {
+                nextState = 'walk';
+                currentDir = (currentState === 'walk' || currentState === 'run') && Math.random() > 0.2 ? currentDir : (Math.random() > 0.5 ? 1 : -1);
+            } else if (r > 0.35 && actions.includes('swipe')) {
+                nextState = 'swipe';
+            } else if (r > 0.25 && actions.includes('lie')) {
+                nextState = 'lie';
+            } else if (r > 0.15 && actions.includes('stand')) {
+                nextState = 'stand';
+            } else if (r > 0.05 && actions.includes('with_ball')) {
+                nextState = 'with_ball';
             }
             currentState = nextState;
             setState(currentState);
             setDirection(currentDir);
             if (Math.random() > 0.8 && (currentState === 'idle' || currentState === 'lie')) {
-                setSaying(currentState === 'lie' ? 'Zzz...' : (isCodachi && codachiStage === 0 ? '...' : '!'));
-                setTimeout(() => setSaying(null), 3000);
+                setSaying(currentState === 'lie'
+                    ? 'Zzz...'
+                    : (isCodachiRef.current && codachiStageRef.current === 0 ? '...' : '!'));
+                safeSetTimeout(() => setSaying(null), 3000);
             }
-            setTimeout(changeState, 2000 + Math.random() * 5000);
+            safeSetTimeout(changeState, 2000 + Math.random() * 5000);
         };
-        const timeout = setTimeout(changeState, Math.random() * 2000);
+        safeSetTimeout(changeState, Math.random() * 2000);
 
         return () => {
             cancelAnimationFrame(animFrame);
-            clearTimeout(timeout);
+            timers.forEach(id => clearTimeout(id));
+            timers.clear();
         };
-    }, [isDragging, yOffset, codachiStage]);
+        // `direction` / `state` are intentionally read once as seeds.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isDragging, codachiStage]);
 
     useEffect(() => {
         const handleGlobalMouseMove = (e: MouseEvent) => {
             if (isDragging && dragStartRel.current) {
-                xRef.current = e.clientX - dragStartRel.current.x;
-                if (wrapperRef.current) wrapperRef.current.style.left = `${xRef.current}px`;
+                const newX = e.clientX - dragStartRel.current.x;
+                if (wrapperRef.current) wrapperRef.current.style.left = `${newX}px`;
                 const bottomY = window.innerHeight - 80;
                 const newYOffset = Math.max(0, bottomY - e.clientY - dragStartRel.current.y);
                 setYOffset(newYOffset);
@@ -223,11 +294,19 @@ function SinglePet({ pet, onRemove, scale, speed }: {
         };
     }, [isDragging]);
 
+    // Short-lived `setSaying(null)` timers spawned from user interactions need
+    // to be cleared on unmount to avoid "set state after unmount" warnings.
+    const sayingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    useEffect(() => () => {
+        if (sayingTimerRef.current) clearTimeout(sayingTimerRef.current);
+    }, []);
+
     const handleMouseDown = (e: React.MouseEvent) => {
         e.stopPropagation();
         setState(petConfig.actions.includes('swipe') ? 'swipe' : 'idle');
         setSaying('!');
-        setTimeout(() => setSaying(null), 1000);
+        if (sayingTimerRef.current) clearTimeout(sayingTimerRef.current);
+        sayingTimerRef.current = setTimeout(() => setSaying(null), 1000);
         setIsDragging(true);
         const rect = (e.target as HTMLElement).getBoundingClientRect();
         dragStartRel.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
@@ -237,7 +316,7 @@ function SinglePet({ pet, onRemove, scale, speed }: {
         <div
             ref={wrapperRef}
             className="absolute z-20 pointer-events-auto"
-            style={{ left: xRef.current, bottom: 80 + yOffset - groundAdjust }}
+            style={{ left: pet.x, bottom: 80 + yOffset - groundAdjust }}
             title="Double click to dismiss, drag to move"
             onDoubleClick={() => onRemove(pet.id)}
             onMouseDown={handleMouseDown}
@@ -272,6 +351,9 @@ function SinglePet({ pet, onRemove, scale, speed }: {
 // ─── Main FocusPets Panel ─────────────────────────────────────────────────────
 export function FocusPets() {
     const { state, feedPet, interactPet } = useApp();
+    // Start with a server-safe empty list. Initial pets are spawned in a
+    // mount effect so we can read `window.innerWidth` without tripping
+    // React 19's hydration checker.
     const [pets, setPets] = useState<PetState[]>([]);
     const [spawnMenuOpen, setSpawnMenuOpen] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
@@ -295,12 +377,21 @@ export function FocusPets() {
     const [skinPickType, setSkinPickType] = useState<Exclude<PetType, 'codachi'> | null>(null);
 
     // Settings (size/speed per profile)
-    const [petSettings, setPetSettings] = useState<Record<string, { scale: number, speed: number }>>({ global: { scale: 1, speed: 1 } });
+    // Start with defaults. Per-pet settings stored in localStorage are loaded
+    // in a mount effect (client-only) to keep SSR and hydration in sync.
+    const [petSettings, setPetSettings] = useState<Record<string, { scale: number, speed: number }>>({
+        global: { scale: 1, speed: 1 },
+    });
     const [selectedProfile, setSelectedProfile] = useState<string>('global');
 
     useEffect(() => {
         const saved = localStorage.getItem('beeziee_pet_settings');
-        if (saved) { try { setPetSettings(JSON.parse(saved)); } catch (_) { } }
+        if (saved) {
+            try {
+                // eslint-disable-next-line react-hooks/set-state-in-effect -- client-only hydration.
+                setPetSettings(JSON.parse(saved));
+            } catch { /* corrupt data */ }
+        }
     }, []);
 
     const updateSetting = (key: 'scale' | 'speed', val: number) => {
@@ -325,8 +416,11 @@ export function FocusPets() {
 
     const currentSettings = petSettings[selectedProfile] || { scale: 1, speed: 1 };
 
+    // Spawn the default duo once on mount (client-only because we need
+    // `window.innerWidth`).
     useEffect(() => {
-        const w = typeof window !== 'undefined' ? window.innerWidth : 1000;
+        const w = window.innerWidth;
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- client-only default spawn.
         setPets([
             { id: '1', type: 'dog', skin: 'akita', x: w / 2 - 100, direction: 1 },
             { id: '2', type: 'fox', skin: 'red', x: w / 2 + 100, direction: -1 },
@@ -452,7 +546,7 @@ export function FocusPets() {
                                         <Shuffle size={14} className="text-white/70" />
                                     </button>
                                     {PET_DEFS[skinPickType].skins.map(skin => {
-                                        const skinScale = ((PET_DEFS[skinPickType] as any).skinScales?.[skin]) ?? 1;
+                                        const skinScale = getPetConfig(skinPickType).skinScales?.[skin] ?? 1;
                                         return (
                                             <button
                                                 key={skin}
@@ -578,7 +672,7 @@ export function FocusPets() {
                                                 >
                                                     <img
                                                         src={getPetUrl(type, 'idle')}
-                                                        style={{ width: (PET_DEFS[type] as any).iconSize ?? 32, height: (PET_DEFS[type] as any).iconSize ?? 32, imageRendering: 'pixelated' }}
+                                                        style={{ width: getPetConfig(type).iconSize ?? 32, height: getPetConfig(type).iconSize ?? 32, imageRendering: 'pixelated' }}
                                                         className="object-contain drop-shadow transition-transform group-hover/petbtn:scale-110"
                                                     />
                                                 </button>

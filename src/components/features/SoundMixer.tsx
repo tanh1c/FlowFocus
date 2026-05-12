@@ -19,7 +19,6 @@ import {
   Shuffle,
   VolumeX,
   ListMusic,
-  X,
   Waves,
   Flame,
   TreeDeciduous,
@@ -38,7 +37,6 @@ import {
 import { cn } from '@/lib/utils';
 import { fetchMusicByType } from '@/services/music';
 import { useMusic, useMusicTime } from '@/contexts/MusicContext';
-import { useApp } from '@/contexts/AppContext';
 
 interface Mood {
   id: string;
@@ -280,9 +278,8 @@ export function SoundMixer({ isOpen, onClose }: SoundMixerProps) {
     }
   }, [activeMood, isOpen, setPlaylist, setCurrentTrackIndex, setIsPlaying]);
 
-  const { state: appState } = useApp();
-  const glassMode = appState.settings.glassMode;
-  const nextTrack = playlist[(currentTrackIndex + 1) % playlist.length];
+  // glassMode / nextTrack were carried over from an older revision - removed
+  // to avoid dead reads into context/state on every render.
 
   return (
     <div

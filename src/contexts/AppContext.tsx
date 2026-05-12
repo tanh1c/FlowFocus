@@ -191,25 +191,33 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | null>(null);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
+  // Start with SSR-safe defaults. We load the real state from localStorage
+  // after mount to avoid hydration mismatches (localStorage doesn't exist
+  // server-side, so the server and client would otherwise disagree on the
+  // first rendered frame).
   const [state, setState] = useState<AppState>(DEFAULT_STATE);
-  const [initialized, setInitialized] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
 
-  // Load from localStorage on mount
   useEffect(() => {
     const loaded = loadState();
-    // Reset today counters if date changed
     if (loaded.todayTasksDate !== today()) {
       loaded.todayTasksCompleted = 0;
       loaded.todayTasksDate = today();
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time client-only hydration.
     setState(loaded);
-    setInitialized(true);
+    setHydrated(true);
   }, []);
 
-  // Save to localStorage on change
+  // Debounced localStorage writes. Previously every single state change
+  // synchronously serialized the whole app state to localStorage (which can
+  // be expensive when typing/dragging sliders). Skip until after hydration
+  // so we don't overwrite the user's data with defaults on the first tick.
   useEffect(() => {
-    if (initialized) saveState(state);
-  }, [state, initialized]);
+    if (!hydrated) return;
+    const handle = setTimeout(() => saveState(state), 300);
+    return () => clearTimeout(handle);
+  }, [state, hydrated]);
 
   // Apply glass mode CSS variable
   useEffect(() => {

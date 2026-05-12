@@ -222,9 +222,17 @@ function NoteCard({ note, isEditing, isGrid, onEdit, onDelete, onPin, onSetColor
 
     useAutoResize(textareaRef, note.content);
 
-    // Close popovers when card loses editing
+    // Close popovers when card loses editing. We're intentionally using a
+    // synchronizing effect here since the popovers live entirely outside the
+    // parent's isEditing state machine.
     useEffect(() => {
-        if (!isEditing) { setShowColors(false); setShowTags(false); }
+        if (!isEditing && (showColors || showTags)) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            setShowColors(false);
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            setShowTags(false);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isEditing]);
 
     // Click outside popover to close
@@ -377,25 +385,38 @@ function NoteCard({ note, isEditing, isGrid, onEdit, onDelete, onPin, onSetColor
 
 // --- Main Component ---
 export function QuickNotes({ isOpen, onClose }: QuickNotesProps) {
+    // Start empty on SSR; real notes and view mode are loaded in the mount
+    // effect below. A lazy initializer touching localStorage here would
+    // break hydration.
     const [notes, setNotes] = useState<Note[]>([]);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
     const [filterTag, setFilterTag] = useState<string | null>(null);
-    const [initialized, setInitialized] = useState(false);
+    const [hydrated, setHydrated] = useState(false);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const panelRef = useRef<HTMLDivElement>(null);
     const searchRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- client-only hydration.
         setNotes(loadNotes());
         const savedView = localStorage.getItem(STORAGE_VIEW_KEY);
         if (savedView === 'grid' || savedView === 'list') setViewMode(savedView);
-        setInitialized(true);
+        setHydrated(true);
     }, []);
 
-    useEffect(() => { if (initialized) saveNotes(notes); }, [notes, initialized]);
-    useEffect(() => { if (initialized) localStorage.setItem(STORAGE_VIEW_KEY, viewMode); }, [viewMode, initialized]);
+    // Debounce persistence - notes can change rapidly while typing.
+    useEffect(() => {
+        if (!hydrated) return;
+        const handle = setTimeout(() => saveNotes(notes), 300);
+        return () => clearTimeout(handle);
+    }, [notes, hydrated]);
+
+    useEffect(() => {
+        if (!hydrated) return;
+        localStorage.setItem(STORAGE_VIEW_KEY, viewMode);
+    }, [viewMode, hydrated]);
 
     useEffect(() => {
         if (editingId && textareaRef.current) {

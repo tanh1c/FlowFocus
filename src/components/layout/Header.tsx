@@ -1,12 +1,12 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import Image from 'next/image';
 import {
   Heart, Gamepad2, Trophy, CircleHelp, Menu, BarChart3, Settings,
   X, Clock, CheckCircle2,
   Flame, Target, Zap, Wind, Brain, Dices, Star, TrendingUp,
-  Monitor, Palette, Bell, Info, Sparkles
+  Monitor, Palette, Bell, Info, Sparkles,
+  type LucideIcon,
 } from 'lucide-react';
 import { Tooltip } from 'antd';
 import { cn } from '@/lib/utils';
@@ -20,56 +20,62 @@ interface HeaderProps {
 
 type ActiveDropdown = 'favorites' | 'games' | 'achieve' | 'help' | 'stats' | 'settings' | 'pets' | null;
 
+// Static data - hoisted so the arrays aren't re-allocated on every render.
+const PRESET_QUOTES = [
+  "Focus on being productive, not busy.",
+  "Do something today that your future self will thank you for.",
+  "The secret of your future is hidden in your daily routine.",
+  "Small disciplines repeated with consistency every day lead to great achievements.",
+  "Don't stop when you're tired. Stop when you're done.",
+];
+
+const PRESET_COLORS = ['#ffffff', '#fca5a5', '#bef264', '#67e8f9', '#c084fc', '#fde047'];
+
+interface QuoteSettings {
+  text?: string;
+  color?: string;
+  align?: 'left' | 'center' | 'right';
+  size?: number;
+}
+
 // --- Smart Clock & Quote Widget ---
 function SmartClockWidget() {
   const [time, setTime] = useState(new Date());
   const [view, setView] = useState<'clock' | 'quote'>('clock');
 
-  // Quote State
-  const [quote, setQuote] = useState('');
-  const [quoteColor, setQuoteColor] = useState('#ffffff');
+  // Initialize with SSR-safe defaults. Actual user settings (which live in
+  // localStorage) are loaded in a mount effect below — otherwise SSR and
+  // client render would disagree and React 19 raises a hydration error.
+  const [quote, setQuote] = useState(PRESET_QUOTES[0]);
+  const [quoteColor, setQuoteColor] = useState<string>('#ffffff');
   const [quoteAlign, setQuoteAlign] = useState<'left' | 'center' | 'right'>('right');
   const [quoteSize, setQuoteSize] = useState(32);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [editQuoteStr, setEditQuoteStr] = useState('');
-
-  // Built-in cool quotes
-  const PRESET_QUOTES = [
-    "Focus on being productive, not busy.",
-    "Do something today that your future self will thank you for.",
-    "The secret of your future is hidden in your daily routine.",
-    "Small disciplines repeated with consistency every day lead to great achievements.",
-    "Don't stop when you're tired. Stop when you're done."
-  ];
-
-  const PRESET_COLORS = ['#ffffff', '#fca5a5', '#bef264', '#67e8f9', '#c084fc', '#fde047'];
-
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- classic SSR-safe hydration flag.
     setMounted(true);
-    // ... rest of useEffect
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('beeziee-quote-settings');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          setQuote(parsed.text || PRESET_QUOTES[0]);
-          setQuoteColor(parsed.color || '#ffffff');
-          setQuoteAlign(parsed.align || 'right');
-          setQuoteSize(parsed.size || 32);
-        } else {
-          setQuote(PRESET_QUOTES[0]);
-        }
-      } catch (e) {
-        setQuote(PRESET_QUOTES[0]);
+    // Hydrate quote settings from localStorage (client-only).
+    try {
+      const saved = localStorage.getItem('beeziee-quote-settings');
+      if (saved) {
+        const parsed = JSON.parse(saved) as QuoteSettings;
+        if (parsed.text) setQuote(parsed.text);
+        if (parsed.color) setQuoteColor(parsed.color);
+        if (parsed.align) setQuoteAlign(parsed.align);
+        if (typeof parsed.size === 'number') setQuoteSize(parsed.size);
       }
+    } catch {
+      /* corrupt or unavailable - fall back to defaults */
     }
+
     const timer = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  const saveSettings = (updates: any) => {
+  const saveSettings = (updates: QuoteSettings) => {
     const newSettings = { text: quote, color: quoteColor, align: quoteAlign, size: quoteSize, ...updates };
     if (updates.text !== undefined) setQuote(updates.text);
     if (updates.color !== undefined) setQuoteColor(updates.color);
@@ -169,7 +175,7 @@ function SmartClockWidget() {
                 lineHeight: "1.3"
               }}
             >
-              "{quote}"
+              &ldquo;{quote}&rdquo;
             </p>
 
             {/* Highly visible Customize Pill revealed on quote hover - using pt-3 as an invisible bridge for seamless hover */}
@@ -230,7 +236,7 @@ function SmartClockWidget() {
                       onClick={() => saveSettings({ text: pq })}
                       className="text-left px-3.5 py-2.5 rounded-xl bg-white/5 border border-transparent hover:border-white/10 hover:bg-white/10 text-white/70 hover:text-white transition-all text-[13px] leading-relaxed italic"
                     >
-                      "{pq}"
+                      &ldquo;{pq}&rdquo;
                     </button>
                   ))}
                 </div>
@@ -667,7 +673,10 @@ export function Header({ onMenuClick, onSelectScene }: HeaderProps) {
   const [petActive, setPetActive] = useState(false);
 
   useEffect(() => {
-    const handler = (e: any) => setPetActive(e.detail);
+    const handler = (e: Event) => {
+      const custom = e as CustomEvent<boolean>;
+      setPetActive(!!custom.detail);
+    };
     window.addEventListener('pets-menu-state', handler);
     return () => window.removeEventListener('pets-menu-state', handler);
   }, []);
@@ -675,7 +684,7 @@ export function Header({ onMenuClick, onSelectScene }: HeaderProps) {
   const toggle = (id: ActiveDropdown) => setActiveDropdown(prev => prev === id ? null : id);
   const close = () => setActiveDropdown(null);
 
-  const navButtons: { id: ActiveDropdown | 'pets'; Icon: any; label: string }[] = [
+  const navButtons: { id: ActiveDropdown | 'pets'; Icon: LucideIcon; label: string }[] = [
     { id: 'favorites', Icon: Heart, label: 'Favorites' },
     { id: 'games', Icon: Gamepad2, label: 'Games' },
     { id: 'achieve', Icon: Trophy, label: 'Achieve' },
