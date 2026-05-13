@@ -386,10 +386,21 @@ const PET_CATEGORIES: { label: string; types: Exclude<PetType, 'codachi'>[] }[] 
     },
 ];
 
+const PET_CDN_BASE = 'https://cdn.jsdelivr.net/gh/tanh1c/FlowFocus@main/public';
+const PET_CDN_TRIAL_TYPES: PetType[] = ['cat', 'dog', 'fox', 'chicken'];
+
+const shouldUsePetCdn = (type: PetType) => PET_CDN_TRIAL_TYPES.includes(type);
+
+const buildPetAssetUrl = (relativePath: string, useCdn: boolean) => {
+    if (!useCdn) return relativePath;
+    return `${PET_CDN_BASE}${relativePath}`;
+};
+
 const getPetUrl = (type: PetType, state: string, skin?: string, direction?: 1 | -1) => {
     if (type === 'codachi') return '';
     const def = PET_DEFS[type as keyof typeof PET_DEFS];
     const s = skin || def.skins[0];
+    const useCdn = shouldUsePetCdn(type);
 
     if (DEMON_SLAYER_TYPES.includes(type)) {
         const supportedActions = ['idle', 'waiting', 'waving', 'jumping', 'review', 'failed'];
@@ -446,8 +457,8 @@ const getPetUrl = (type: PetType, state: string, skin?: string, direction?: 1 | 
     }
 
     // cat: cat_<action>.gif
-    if (type === 'cat') return `/pets/cat/cat_${state}.gif`;
-    return `/pets/${type}/${s}_${state}_8fps.gif`;
+    if (type === 'cat') return buildPetAssetUrl(`/pets/cat/cat_${state === 'run' ? 'run' : state === 'walk' ? 'walk' : 'idle'}.gif`, useCdn);
+    return buildPetAssetUrl(`/pets/${type}/${s}_${state}_8fps.gif`, useCdn);
 };
 
 // ─── State Interface ──────────────────────────────────────────────────────────
