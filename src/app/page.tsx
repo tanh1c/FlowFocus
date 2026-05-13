@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Header } from '@/components/layout/Header';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { NowPlayingBar } from '@/components/features/NowPlayingBar';
@@ -69,6 +69,11 @@ function preloadSceneAsset(sceneUrl: string): Promise<void> {
   return Promise.resolve();
 }
 
+function preloadHoverSceneAsset(sceneUrl: string): Promise<void> {
+  if (hasAnyExtension(sceneUrl, VIDEO_EXTENSIONS)) return Promise.resolve();
+  return preloadSceneAsset(sceneUrl);
+}
+
 export default function HomePage() {
   return (
     <>
@@ -89,6 +94,8 @@ function HomeContent() {
   const [pixelRendering, setPixelRendering] = useState<'crisp-edges' | 'pixelated'>('crisp-edges');
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [isSceneLoading, setIsSceneLoading] = useState(false);
+  const hoverPreloadTimeoutRef = useRef<number | null>(null);
+  const hoverPreloadedScenesRef = useRef<Set<string>>(new Set());
 
   const { state: appState, toggleZenMode } = useApp();
   const { isPlaying, setIsPlaying } = useMusic();
@@ -153,7 +160,23 @@ function HomeContent() {
   );
 
   const handlePreloadScene = useCallback((scene: { sceneUrl: string }) => {
-    void preloadSceneAsset(scene.sceneUrl);
+    if (hoverPreloadTimeoutRef.current) {
+      window.clearTimeout(hoverPreloadTimeoutRef.current);
+    }
+
+    if (hoverPreloadedScenesRef.current.has(scene.sceneUrl)) return;
+
+    hoverPreloadTimeoutRef.current = window.setTimeout(() => {
+      if (hoverPreloadedScenesRef.current.has(scene.sceneUrl)) return;
+      hoverPreloadedScenesRef.current.add(scene.sceneUrl);
+      void preloadHoverSceneAsset(scene.sceneUrl);
+    }, 250);
+  }, []);
+
+  const handleCancelPreloadScene = useCallback(() => {
+    if (!hoverPreloadTimeoutRef.current) return;
+    window.clearTimeout(hoverPreloadTimeoutRef.current);
+    hoverPreloadTimeoutRef.current = null;
   }, []);
 
   // --- Global Keyboard Shortcuts ---
@@ -346,6 +369,7 @@ function HomeContent() {
         onSelectFilter={setCurrentFilter}
         onSelectScene={handleSelectScene}
         onPreloadScene={handlePreloadScene}
+        onCancelPreloadScene={handleCancelPreloadScene}
         pixelRendering={pixelRendering}
         onPixelRenderingChange={setPixelRendering}
       />

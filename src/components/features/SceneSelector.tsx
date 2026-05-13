@@ -23,6 +23,7 @@ interface SceneSelectorProps {
   onClose: () => void;
   onSelectScene?: (scene: Scene) => void;
   onPreloadScene?: (scene: Scene) => void;
+  onCancelPreloadScene?: () => void;
   currentScene?: string;
   currentFilter: string;
   onSelectFilter: (filter: string) => void;
@@ -639,6 +640,7 @@ export function SceneSelector({
   onClose,
   onSelectScene,
   onPreloadScene,
+  onCancelPreloadScene,
   currentScene,
   currentFilter,
   onSelectFilter,
@@ -826,7 +828,9 @@ export function SceneSelector({
                 key={scene._id}
                 onClick={() => onSelectScene?.(scene)}
                 onMouseEnter={() => onPreloadScene?.(scene)}
+                onMouseLeave={onCancelPreloadScene}
                 onFocus={() => onPreloadScene?.(scene)}
+                onBlur={onCancelPreloadScene}
                 className={cn(
                   'group relative w-full aspect-video rounded-xl overflow-hidden transition-all duration-300',
                   'border',

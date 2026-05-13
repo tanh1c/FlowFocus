@@ -614,8 +614,10 @@ function StatsPanel() {
 
 // --- Settings Panel ---
 function SettingsPanel() {
-  const { state, updateSettings } = useApp();
+  const { state, updateSettings, grantAdminTestRewards } = useApp();
   const { settings } = state;
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const isDev = process.env.NODE_ENV === 'development';
 
   return (
     <div className="w-[340px] p-5">
@@ -657,6 +659,40 @@ function SettingsPanel() {
               onChange={(e) => updateSettings({ darkOverlayOpacity: Number(e.target.value) })}
               className="w-full h-1.5 bg-white/10 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow-md"
             />
+          </div>
+        )}
+
+        {isDev && (
+          <div className="rounded-xl border border-amber-400/15 bg-amber-400/10 px-3 py-3">
+            <button
+              onClick={() => setShowAdminPanel(prev => !prev)}
+              className="flex w-full items-center justify-between text-left"
+            >
+              <div>
+                <p className="text-base text-amber-200 tracking-tight">Admin Test Panel</p>
+                <p className="text-xs text-amber-100/35">Dev-only rewards and unlocks</p>
+              </div>
+              <span className="text-[10px] font-black uppercase tracking-widest text-amber-200/70">
+                {showAdminPanel ? 'Hide' : 'Show'}
+              </span>
+            </button>
+
+            {showAdminPanel && (
+              <div className="mt-3 space-y-3 border-t border-amber-200/10 pt-3">
+                <div className="grid grid-cols-2 gap-2 text-[10px] font-bold uppercase tracking-wide text-white/45">
+                  <div className="rounded-lg bg-black/20 px-2 py-1.5">Coins: <span className="text-white/80">{state.coins}</span></div>
+                  <div className="rounded-lg bg-black/20 px-2 py-1.5">Common: <span className="text-white/80">{state.inventory.chests.common}</span></div>
+                  <div className="rounded-lg bg-black/20 px-2 py-1.5">Rare: <span className="text-white/80">{state.inventory.chests.rare}</span></div>
+                  <div className="rounded-lg bg-black/20 px-2 py-1.5">Food: <span className="text-white/80">{state.inventory.food.basicSnack + state.inventory.food.focusBerry}</span></div>
+                </div>
+                <button
+                  onClick={grantAdminTestRewards}
+                  className="w-full rounded-xl bg-amber-300 px-3 py-2 text-xs font-black uppercase tracking-widest text-black transition-colors hover:bg-amber-200 active:scale-[0.98]"
+                >
+                  Grant Test Rewards
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

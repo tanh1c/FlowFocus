@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
     Plus, Trash2, Circle, GripVertical, Pencil,
     LayoutGrid, Calendar as CalendarIcon, ListTodo, BarChart3,
@@ -97,7 +98,7 @@ function DraggableTaskCard({ task, onCycle, onDelete, onEdit }: {
 
     return (
         <div ref={setNodeRef} style={style}
-            className={cn("group bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/15 rounded-xl p-3.5 transition-all", isDragging && "shadow-xl ring-1 ring-white/20")}
+            className={cn("group bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/15 rounded-xl p-3.5 transition-colors", isDragging && "shadow-xl ring-1 ring-white/20")}
         >
             <div className="flex items-start gap-2.5">
                 <div {...attributes} {...listeners} className="shrink-0 mt-1 cursor-grab active:cursor-grabbing text-white/15 hover:text-white/40 transition-colors">
@@ -241,13 +242,16 @@ function BoardView({ tasks, onCycle, onDelete, onAdd, onEdit, onMoveTask }: {
                     );
                 })}
             </div>
-            <DragOverlay>
-                {activeTask && (
-                    <div className="bg-black/90 border border-white/20 rounded-xl p-3.5 shadow-2xl ring-2 ring-primary/30 w-[260px]">
-                        <p className="text-sm text-white/85">{activeTask.text}</p>
-                    </div>
-                )}
-            </DragOverlay>
+            {typeof document !== 'undefined' && createPortal(
+                <DragOverlay>
+                    {activeTask && (
+                        <div className="bg-black/90 border border-white/20 rounded-xl p-3.5 shadow-2xl ring-2 ring-primary/30 w-[260px]">
+                            <p className="text-sm text-white/85">{activeTask.text}</p>
+                        </div>
+                    )}
+                </DragOverlay>,
+                document.body
+            )}
         </DndContext>
     );
 }
@@ -499,20 +503,24 @@ export function TaskBoard({ isOpen, onClose }: TaskBoardProps) {
     const deleteTask = (id: string) => setTasks(prev => prev.filter(t => t.id !== id));
     const editTask = (id: string, text: string) => setTasks(prev => prev.map(t => t.id === id ? { ...t, text } : t));
     const cycleStatus = (id: string) => {
+        let completedTask = false;
         setTasks(prev => prev.map(t => {
             if (t.id !== id) return t;
             const order: TaskStatus[] = ['todo', 'inProgress', 'done'];
             const newStatus = order[(order.indexOf(t.status) + 1) % order.length];
-            if (newStatus === 'done' && t.status !== 'done') recordTaskCompletion();
+            completedTask = newStatus === 'done' && t.status !== 'done';
             return { ...t, status: newStatus };
         }));
+        if (completedTask) recordTaskCompletion();
     };
     const moveTask = (taskId: string, newStatus: TaskStatus) => {
+        let completedTask = false;
         setTasks(prev => prev.map(t => {
             if (t.id !== taskId) return t;
-            if (newStatus === 'done' && t.status !== 'done') recordTaskCompletion();
+            completedTask = newStatus === 'done' && t.status !== 'done';
             return { ...t, status: newStatus };
         }));
+        if (completedTask) recordTaskCompletion();
     };
     const openAddModal = (status: TaskStatus = 'todo') => { setAddToStatus(status); setShowAddModal(true); };
 
