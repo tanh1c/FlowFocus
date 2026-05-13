@@ -17,6 +17,10 @@ interface PetConfig {
     skinScales?: Record<string, number>;
 }
 
+type PetBehaviorSettings = { scale: number; speed: number; movement: boolean };
+
+const DEFAULT_PET_BEHAVIOR_SETTINGS: PetBehaviorSettings = { scale: 1, speed: 1, movement: true };
+
 const PET_DEFS = {
     cat: { skins: ['cat'], size: 70, speed: 1.1, actions: ['idle', 'walk', 'run'], iconSize: 62, bottomShift: 0.26 },
     dog: { skins: ['akita', 'black', 'brown', 'red', 'white'], size: 44, speed: 0.8, actions: ['idle', 'walk', 'run', 'swipe', 'with_ball', 'lie'] },
@@ -465,11 +469,12 @@ interface PetState {
 const labelSkin = (s: string) => s.replace(/_/g, ' ');
 
 // ─── SinglePet Component ──────────────────────────────────────────────────────
-function SinglePet({ pet, onRemove, scale, speed }: {
+function SinglePet({ pet, onRemove, scale, speed, movement }: {
     pet: PetState,
     onRemove: (id: string) => void,
     scale: number,
-    speed: number
+    speed: number,
+    movement: boolean
 }) {
     const wrapperRef = useRef<HTMLDivElement>(null);
     const [direction, setDirection] = useState(pet.direction);
@@ -525,6 +530,7 @@ function SinglePet({ pet, onRemove, scale, speed }: {
     // settings panel won't tear down and rebuild the rAF loop each time.
     const speedRef = useRef(speed);
     const scaleRef = useRef(scale);
+    const movementRef = useRef(movement);
     const actualBaseSpeedRef = useRef(actualBaseSpeed);
     const actualSizeRef = useRef(actualSize);
     const actionsRef = useRef(petConfig.actions);
@@ -532,6 +538,10 @@ function SinglePet({ pet, onRemove, scale, speed }: {
     const codachiStageRef = useRef(codachiStage);
     useEffect(() => { speedRef.current = speed; }, [speed]);
     useEffect(() => { scaleRef.current = scale; }, [scale]);
+    useEffect(() => {
+        movementRef.current = movement;
+        if (!movement && (state === 'walk' || state === 'run')) setState('idle');
+    }, [movement, state]);
     useEffect(() => { actualBaseSpeedRef.current = actualBaseSpeed; }, [actualBaseSpeed]);
     useEffect(() => { actualSizeRef.current = actualSize; }, [actualSize]);
     useEffect(() => { actionsRef.current = petConfig.actions; }, [petConfig.actions]);
@@ -621,7 +631,7 @@ function SinglePet({ pet, onRemove, scale, speed }: {
             const dt = time - lastTime;
             lastTime = time;
             // Skip movement while falling - fall effect owns yOffset.
-            if (yOffsetRef.current <= 0 && (currentState === 'walk' || currentState === 'run')) {
+            if (movementRef.current && yOffsetRef.current <= 0 && (currentState === 'walk' || currentState === 'run')) {
                 const speedMult = currentState === 'run' ? 1.5 : 1;
                 const nextX =
                     xRef.current +
@@ -649,10 +659,10 @@ function SinglePet({ pet, onRemove, scale, speed }: {
             let nextState = 'idle';
             if (isCodachiRef.current && codachiStageRef.current === 0) {
                 nextState = 'idle';
-            } else if (r > 0.8 && actions.includes('run')) {
+            } else if (movementRef.current && r > 0.8 && actions.includes('run')) {
                 nextState = 'run';
                 currentDir = (currentState === 'walk' || currentState === 'run') && Math.random() > 0.2 ? currentDir : (Math.random() > 0.5 ? 1 : -1);
-            } else if (r > 0.5) {
+            } else if (movementRef.current && r > 0.5) {
                 nextState = 'walk';
                 currentDir = (currentState === 'walk' || currentState === 'run') && Math.random() > 0.2 ? currentDir : (Math.random() > 0.5 ? 1 : -1);
             } else if (r > 0.35 && actions.includes('swipe')) {
@@ -830,8 +840,8 @@ export function FocusPets() {
     // Settings (size/speed per profile)
     // Start with defaults. Per-pet settings stored in localStorage are loaded
     // in a mount effect (client-only) to keep SSR and hydration in sync.
-    const [petSettings, setPetSettings] = useState<Record<string, { scale: number, speed: number }>>({
-        global: { scale: 1, speed: 1 },
+    const [petSettings, setPetSettings] = useState<Record<string, PetBehaviorSettings>>({
+        global: DEFAULT_PET_BEHAVIOR_SETTINGS,
     });
     const [selectedProfile, setSelectedProfile] = useState<string>('global');
 
@@ -839,8 +849,12 @@ export function FocusPets() {
         const saved = localStorage.getItem('beeziee_pet_settings');
         if (saved) {
             try {
+                const parsed = JSON.parse(saved) as Record<string, Partial<PetBehaviorSettings>>;
+                const normalized = Object.fromEntries(
+                    Object.entries(parsed).map(([key, value]) => [key, { ...DEFAULT_PET_BEHAVIOR_SETTINGS, ...value }])
+                ) as Record<string, PetBehaviorSettings>;
                 // eslint-disable-next-line react-hooks/set-state-in-effect -- client-only hydration.
-                setPetSettings(JSON.parse(saved));
+                setPetSettings({ global: DEFAULT_PET_BEHAVIOR_SETTINGS, ...normalized });
             } catch { /* corrupt data */ }
         }
     }, []);
@@ -848,8 +862,18 @@ export function FocusPets() {
     const updateSetting = (key: 'scale' | 'speed', val: number) => {
         setPetSettings(prev => {
             const next = { ...prev };
-            if (!next[selectedProfile]) next[selectedProfile] = { scale: 1, speed: 1 };
-            next[selectedProfile][key] = val;
+            if (!next[selectedProfile]) next[selectedProfile] = DEFAULT_PET_BEHAVIOR_SETTINGS;
+            next[selectedProfile] = { ...next[selectedProfile], [key]: val };
+            localStorage.setItem('beeziee_pet_settings', JSON.stringify(next));
+            return next;
+        });
+    };
+
+    const updateMovementSetting = (movement: boolean) => {
+        setPetSettings(prev => {
+            const next = { ...prev };
+            if (!next[selectedProfile]) next[selectedProfile] = DEFAULT_PET_BEHAVIOR_SETTINGS;
+            next[selectedProfile] = { ...next[selectedProfile], movement };
             localStorage.setItem('beeziee_pet_settings', JSON.stringify(next));
             return next;
         });
@@ -858,14 +882,14 @@ export function FocusPets() {
     const resetSettings = () => {
         setPetSettings(prev => {
             const next = { ...prev };
-            if (selectedProfile === 'global') next.global = { scale: 1, speed: 1 };
+            if (selectedProfile === 'global') next.global = DEFAULT_PET_BEHAVIOR_SETTINGS;
             else delete next[selectedProfile];
             localStorage.setItem('beeziee_pet_settings', JSON.stringify(next));
             return next;
         });
     };
 
-    const currentSettings = petSettings[selectedProfile] || { scale: 1, speed: 1 };
+    const currentSettings = petSettings[selectedProfile] || DEFAULT_PET_BEHAVIOR_SETTINGS;
 
     useEffect(() => {
         if (!activeOwnedPet) {
@@ -917,7 +941,8 @@ export function FocusPets() {
                 {pets.filter(pet => pet.type === 'codachi' || (pet.type in PET_DEFS)).map(pet => {
                     const petScale = (petSettings.global?.scale || 1) * (petSettings[pet.type]?.scale || 1);
                     const petSpeed = (petSettings.global?.speed || 1) * (petSettings[pet.type]?.speed || 1);
-                    return <SinglePet key={pet.id} pet={pet} onRemove={handleRemove} scale={petScale} speed={petSpeed} />;
+                    const petMovement = (petSettings.global?.movement ?? true) && (petSettings[pet.type]?.movement ?? true);
+                    return <SinglePet key={pet.id} pet={pet} onRemove={handleRemove} scale={petScale} speed={petSpeed} movement={petMovement} />;
                 })}
             </div>
 
@@ -994,6 +1019,25 @@ export function FocusPets() {
                                             />
                                         </div>
                                     ))}
+
+                                    <div className="mt-1 flex items-center justify-between rounded-lg border border-white/5 bg-black/25 px-3 py-2">
+                                        <div className="min-w-0">
+                                            <p className="text-[11px] font-bold uppercase tracking-wide text-white/70">Movement</p>
+                                            <p className="text-[9px] text-white/35">Allow walk/run across the screen</p>
+                                        </div>
+                                        <button
+                                            onClick={() => updateMovementSetting(!currentSettings.movement)}
+                                            className={cn(
+                                                "h-5.5 w-10 rounded-full p-0.5 transition-all duration-200",
+                                                currentSettings.movement ? "bg-primary/60" : "bg-white/10"
+                                            )}
+                                        >
+                                            <div className={cn(
+                                                "h-4.5 w-4.5 rounded-full bg-white shadow-sm transition-transform duration-200",
+                                                currentSettings.movement ? "translate-x-[18px]" : "translate-x-0"
+                                            )} />
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         )}

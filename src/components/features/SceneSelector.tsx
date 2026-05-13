@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import Image from 'next/image';
-import { Heart } from 'lucide-react';
+import { Heart, Trash2, Upload } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/contexts/AppContext';
 
@@ -29,6 +29,9 @@ interface SceneSelectorProps {
   onSelectFilter: (filter: string) => void;
   pixelRendering?: 'crisp-edges' | 'pixelated';
   onPixelRenderingChange?: (v: 'crisp-edges' | 'pixelated') => void;
+  customScenes?: Scene[];
+  onUploadScene?: (file: File) => Promise<void> | void;
+  onDeleteCustomScene?: (scene: Scene) => void;
 }
 
 export interface Filter {
@@ -42,6 +45,9 @@ const FILTER_PRESETS: Filter[] = [
   { name: 'Vivid', value: 'saturate(1.3) contrast(1.1)', previewColor: '#fcd34d' },
   { name: 'Dim', value: 'brightness(0.6) saturate(0.8)', previewColor: '#4b5563' },
 ];
+
+const CUSTOM_SCENE_MAX_SIZE = 10 * 1024 * 1024;
+const CUSTOM_SCENE_ACCEPT = 'image/png,image/jpeg,image/webp,image/avif,image/gif';
 
 export const scenesData: Scene[] = [
   {
@@ -646,9 +652,14 @@ export function SceneSelector({
   onSelectFilter,
   pixelRendering = 'crisp-edges',
   onPixelRenderingChange,
+  customScenes = [],
+  onUploadScene,
+  onDeleteCustomScene,
 }: SceneSelectorProps) {
   const { toggleFavoriteScene, isFavoriteScene } = useApp();
-  const [activeTab, setActiveTab] = useState<'static' | 'live' | 'pixel'>('static');
+  const [activeTab, setActiveTab] = useState<'static' | 'live' | 'pixel' | 'custom'>('static');
+  const [uploadError, setUploadError] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
   /* Dragging Logic */
   const [isDragging, setIsDragging] = useState(false);
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
@@ -656,11 +667,13 @@ export function SceneSelector({
   const dragOffset = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const panelRef = useRef<HTMLDivElement>(null);
 
-  const scenes = activeTab === 'static'
-    ? scenesData.filter(s => s.type === 'IMAGE')
-    : activeTab === 'pixel'
-      ? scenesData.filter(s => s.type === 'GIF')
-      : scenesData.filter(s => s.type === 'VIDEO');
+  const scenes = activeTab === 'custom'
+    ? customScenes
+    : activeTab === 'static'
+      ? scenesData.filter(s => s.type === 'IMAGE')
+      : activeTab === 'pixel'
+        ? scenesData.filter(s => s.type === 'GIF')
+        : scenesData.filter(s => s.type === 'VIDEO');
 
   useEffect(() => {
     if (!isDragging) return;
@@ -714,6 +727,32 @@ export function SceneSelector({
     setIsDragging(true);
   };
 
+  const handleUploadChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !onUploadScene) return;
+
+    if (!file.type.startsWith('image/')) {
+      setUploadError('Please choose an image file.');
+      return;
+    }
+
+    if (file.size > CUSTOM_SCENE_MAX_SIZE) {
+      setUploadError('Image must be 10 MB or smaller.');
+      return;
+    }
+
+    setUploadError('');
+    setIsUploading(true);
+    try {
+      await onUploadScene(file);
+    } catch {
+      setUploadError('Could not save this scene. Try another image.');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   return (
     <div
       ref={panelRef}
@@ -749,11 +788,11 @@ export function SceneSelector({
       <div className="flex flex-col gap-3 p-4 flex-1 overflow-hidden">
 
         {/* Tab Switcher */}
-        <div className="grid grid-cols-3 p-1 bg-black/40 rounded-2xl border border-white/5 relative z-10 mt-1">
+        <div className="grid grid-cols-4 p-1 bg-black/40 rounded-2xl border border-white/5 relative z-10 mt-1">
           <button
             onClick={() => setActiveTab('static')}
             className={cn(
-              'px-3 py-2.5 text-sm font-semibold rounded-xl transition-all duration-300',
+              'px-2 py-2.5 text-sm font-semibold rounded-xl transition-all duration-300',
               activeTab === 'static'
                 ? 'bg-white/10 text-white shadow-sm ring-1 ring-white/10'
                 : 'text-white/40 hover:text-white hover:bg-white/5'
@@ -764,7 +803,7 @@ export function SceneSelector({
           <button
             onClick={() => setActiveTab('live')}
             className={cn(
-              'px-3 py-2.5 text-sm font-semibold rounded-xl transition-all duration-300',
+              'px-2 py-2.5 text-sm font-semibold rounded-xl transition-all duration-300',
               activeTab === 'live'
                 ? 'bg-white/10 text-white shadow-sm ring-1 ring-white/10'
                 : 'text-white/40 hover:text-white hover:bg-white/5'
@@ -775,13 +814,24 @@ export function SceneSelector({
           <button
             onClick={() => setActiveTab('pixel')}
             className={cn(
-              'px-3 py-2.5 text-[13px] font-semibold rounded-xl transition-all duration-300',
+              'px-2 py-2.5 text-[13px] font-semibold rounded-xl transition-all duration-300',
               activeTab === 'pixel'
                 ? 'bg-violet-500/20 text-violet-300 shadow-sm ring-1 ring-violet-500/30'
                 : 'text-white/40 hover:text-violet-300 hover:bg-white/5'
             )}
           >
             Pixel
+          </button>
+          <button
+            onClick={() => setActiveTab('custom')}
+            className={cn(
+              'px-2 py-2.5 text-[13px] font-semibold rounded-xl transition-all duration-300',
+              activeTab === 'custom'
+                ? 'bg-primary/20 text-primary shadow-sm ring-1 ring-primary/30'
+                : 'text-white/40 hover:text-primary hover:bg-white/5'
+            )}
+          >
+            Mine
           </button>
         </div>
 
@@ -822,6 +872,37 @@ export function SceneSelector({
 
         {/* Scene List */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden space-y-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] relative z-10 mt-2">
+          {activeTab === 'custom' && (
+            <div className="rounded-2xl border border-dashed border-primary/25 bg-primary/5 p-3">
+              <label className={cn(
+                'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-white/10 bg-black/25 px-4 py-5 text-center transition-all hover:border-primary/40 hover:bg-primary/10',
+                isUploading && 'pointer-events-none opacity-60'
+              )}>
+                <input
+                  type="file"
+                  accept={CUSTOM_SCENE_ACCEPT}
+                  className="hidden"
+                  onChange={handleUploadChange}
+                  disabled={isUploading || !onUploadScene}
+                />
+                <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary/15 text-primary">
+                  <Upload size={18} />
+                </span>
+                <span className="text-xs font-bold uppercase tracking-[0.18em] text-white/80">
+                  {isUploading ? 'Saving scene' : 'Upload scene'}
+                </span>
+                <span className="text-[10px] leading-relaxed text-white/40">
+                  PNG, JPG, WebP, AVIF or GIF · max 10 MB
+                </span>
+              </label>
+              {uploadError && (
+                <p className="mt-2 text-center text-[10px] font-medium text-red-300/90">
+                  {uploadError}
+                </p>
+              )}
+            </div>
+          )}
+
           {scenes.length > 0 ? (
             scenes.map((scene) => (
               <button
@@ -839,7 +920,8 @@ export function SceneSelector({
                     : 'border-white/10 hover:border-white/30 hover:shadow-lg hover:scale-[1.01]'
                 )}
               >
-                {scene.type === 'GIF' ? (
+                {scene.type === 'GIF' || activeTab === 'custom' ? (
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={scene.thumbnail}
                     alt={scene.name}
@@ -847,7 +929,7 @@ export function SceneSelector({
                       'absolute inset-0 w-full h-full object-cover transition-transform duration-700 ease-out',
                       'group-hover:scale-105'
                     )}
-                    style={{ imageRendering: pixelRendering }}
+                    style={scene.type === 'GIF' ? { imageRendering: pixelRendering } : undefined}
                   />
                 ) : (
                   <Image
@@ -877,16 +959,28 @@ export function SceneSelector({
                   )}
                 </div>
 
-                {/* Favorite Button */}
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={(e) => { e.stopPropagation(); toggleFavoriteScene(scene._id); }}
-                  onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); toggleFavoriteScene(scene._id); } }}
-                  className="absolute top-2 left-2 p-1.5 rounded-full bg-black/40 backdrop-blur-md hover:bg-black/60 transition-all opacity-0 group-hover:opacity-100 z-10"
-                >
-                  <Heart size={14} className={cn("transition-colors", isFavoriteScene(scene._id) ? "fill-red-400 text-red-400" : "text-white/60")} />
-                </div>
+                {/* Favorite/Delete Button */}
+                {activeTab === 'custom' ? (
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => { e.stopPropagation(); onDeleteCustomScene?.(scene); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); onDeleteCustomScene?.(scene); } }}
+                    className="absolute top-2 left-2 p-1.5 rounded-full bg-black/40 backdrop-blur-md hover:bg-red-500/60 transition-all opacity-0 group-hover:opacity-100 z-10"
+                  >
+                    <Trash2 size={14} className="text-white/70" />
+                  </div>
+                ) : (
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => { e.stopPropagation(); toggleFavoriteScene(scene._id); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); toggleFavoriteScene(scene._id); } }}
+                    className="absolute top-2 left-2 p-1.5 rounded-full bg-black/40 backdrop-blur-md hover:bg-black/60 transition-all opacity-0 group-hover:opacity-100 z-10"
+                  >
+                    <Heart size={14} className={cn("transition-colors", isFavoriteScene(scene._id) ? "fill-red-400 text-red-400" : "text-white/60")} />
+                  </div>
+                )}
 
                 {/* Content Overlay */}
                 <div className="absolute inset-x-0 bottom-0 p-4 bg-gradient-to-t from-black/80 via-black/40 to-transparent">
@@ -910,7 +1004,9 @@ export function SceneSelector({
                 {/* Fallback Icon */}
                 <div className="w-5 h-5 border-2 border-white/20 border-dashed rounded-full animate-spin-slow" />
               </div>
-              <span className="text-xs font-medium uppercase tracking-wider">No scenes found</span>
+              <span className="text-xs font-medium uppercase tracking-wider">
+                {activeTab === 'custom' ? 'No uploaded scenes yet' : 'No scenes found'}
+              </span>
             </div>
           )}
         </div>
